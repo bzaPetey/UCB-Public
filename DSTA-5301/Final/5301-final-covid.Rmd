@@ -6,12 +6,22 @@ output: html_document
 ---
 
 ## Opening Question
-For the final in DSTA 5301, we are going to look at the Covid data from the Johns Hopkins git repository. I hope to gain some insight into how Indiana fared with  the pandemic compared to the rest of the United States of America. I know what the media was telling me, but what does the data say?
+For the final in DSTA 5301, we are going to look at the Covid data from the Johns Hopkins git repository.
 
+I hope to gain some insight into how Indiana fared with  the pandemic compared to the rest of the United States of America. I know what the media was telling me, but what does the data say?
+
+## Source
 You can get the data for yourself at the following link:
 
 https://github.com/CSSEGISandData/COVID-19/tree/master/csse_covid_19_data/csse_covid_19_time_series
 
+This time series data is part of a larger set that can be located at:
+
+https://github.com/CSSEGISandData/COVID-19
+
+I will not be using the global data files as I am only interested in the data about the United States and Indiana in particular.
+
+The data itself is a time series of reported cases, deaths and populations for either different countries (global) or states (us).
 
 ## Add Libraries
 To do this analysis, we are going to need some libraries to help out. Here is a listing of the ones that I will be using for this exploration and report.
@@ -85,7 +95,7 @@ All of the old columns that were used for dates had an X in front of the date. N
 
 After that I want to get it into the format yyyy-mm-dd. It is currently in the format of m.dd.yy. This will make the analysis much easier to work with if I want to look at the data over a set period of time.
 
-```{r}
+```{r fix_dates}
 # remove the x in front of the date
 us_cases_cleaned$date <- substr(us_cases_cleaned$date, 2, nchar(us_cases_cleaned$date))
 
@@ -239,18 +249,18 @@ chart <- head(death_per, n = 10) %>%
   theme_bw() +
   labs(title = "Top 10 States By Population Death Percentage", x='State', y = 'Population Death Percentage')
 
-chart + scale_y_continuous(labels = function(x) format(x, big.mark = ",", scientific = FALSE)) +
+chart + scale_y_continuous(labels = function(x) format(paste0(round(x*100), "%"), big.mark = ",", scientific = FALSE)) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
 
 ## Indiana
 My current home state is Indiana. Let’s take a look at the covid data over time that we have for it. 
 
-```{r}
+```{r indiana_cases}
 IN <- state_totals %>% 
   filter(Province_State == 'Indiana')
 
-IN %>% 
+chart <- IN %>% 
   ggplot() +
   geom_line(aes(date, Cases, color = 'Cases')) +
   theme_bw() +
@@ -259,11 +269,12 @@ IN %>%
        title = "Number of Indiana Covid Cases Over Time") +
   theme(legend.position = "none")
 
+chart + scale_y_continuous(labels = function(x) format(x, big.mark = ",", scientific = FALSE))
 ```
 
 
-```{r}
-IN %>% 
+```{r indiana_deaths}
+chart <- IN %>% 
   ggplot() +
   geom_line(aes(date, Deaths, color = 'Deaths')) +
   theme_bw() +
@@ -272,10 +283,11 @@ IN %>%
        title = "Number of Indiana Covid Deaths Over Time") +
     theme(legend.position = "none")
 
+chart + scale_y_continuous(labels = function(x) format(x, big.mark = ",", scientific = FALSE))
 ```
 
-```{r}
-IN %>% 
+```{r indiana_cases_and_deaths}
+chart <- IN %>% 
   ggplot() +
   geom_line(aes(date, Cases, color = 'Cases')) +
   geom_line(aes(date, Deaths, color = 'Deaths')) +
@@ -289,6 +301,8 @@ IN %>%
       legend.justification='left',
       legend.direction='horizontal'
       )
+
+chart + scale_y_continuous(labels = function(x) format(x, big.mark = ",", scientific = FALSE))
 ```
 
 ### Arizona Data
@@ -296,11 +310,11 @@ Arizona has the highest death percentage by population. Let’s take a look at h
 
 When we visualize the data across all of the states, we can see a similar pattern that appears over time. The spikes do not seem to be centralized to any one state, but at the same time across most states.
 
-```{r}
+```{r arizona_cases_and_deaths}
 AZ <- state_totals %>% 
   filter(Province_State == 'Arizona')
 
-AZ %>% 
+chart <- AZ %>% 
   ggplot() +
   geom_line(aes(date, Cases, color = 'Cases')) +
   geom_line(aes(date, Deaths, color = 'Deaths')) +
@@ -315,17 +329,18 @@ AZ %>%
       legend.direction='horizontal'
       )
 
+chart + scale_y_continuous(labels = function(x) format(x, big.mark = ",", scientific = FALSE))
 ```
 
 ### USA Total Stats
 Let’s take a look at the whole USA so we can get a bigger picture of what the combined cases and deaths over time looks like.
 
-```{r}
+```{r usa_cases_and_deaths}
 usa <- state_totals %>%
   group_by(date) %>% 
   summarise(Cases = sum(Cases), Deaths = sum(Deaths))
   
-usa %>% 
+chart <- usa %>% 
   ggplot() +
   geom_line(aes(date, Cases, color = 'Cases')) +
   geom_line(aes(date, Deaths, color = 'Deaths')) +
@@ -338,7 +353,26 @@ usa %>%
       legend.position = "bottom",
       legend.justification='left',
       legend.direction='horizontal'
-      )  
+      )
+
+chart + scale_y_continuous(labels = function(x) format(x, big.mark = ",", scientific = FALSE))
+```
+
+## Death Model
+I have chosen to create a linear model to predict the rise in the death rate of covid in Indiana. This is a simple model that is based on the daily increase of covid deaths presented in our time frame. I am using the complete time frame for this prediction, but I see that using only the last year could make it more accurate as the death rate has started to flatline.
+
+```{r linear_death_model, echo=T, message=FALSE}
+model <- lm(Deaths ~ date, data = IN)
+
+chart <- IN %>% 
+  ggplot(aes(x = date, y = Deaths)) +
+    geom_point() +
+    geom_smooth(method = "lm") +
+    labs(title = "Predicted COVID Deaths in Indiana",
+         x = "Date",
+         y = "Deaths")
+
+chart + scale_y_continuous(labels = function(x) format(x, big.mark = ",", scientific = FALSE))
 ```
 
 ## Bias
@@ -354,7 +388,7 @@ If we look at the average and max values for the percentage of cases and deaths 
 
 With only having access to the population, cases, and deaths, we can not really get a crystal clear picture of how Indiana held up to covid vs the rest of the United States. I would like to get some information on age groups, how hospitals are set up for outbreaks, and other social-economic data to really see the division from state to state.
 
-```{r}
+```{r indiana_vs_usa}
 avg_us_infected <- mean(infected$Infected_Percent) * 100
 avg_us_death <- mean(infected$Death_Percent) * 100
 
