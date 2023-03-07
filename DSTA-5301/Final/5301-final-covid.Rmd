@@ -1,0 +1,388 @@
+---
+title: "5301 Final - Covid"
+author: "Peter Laliberte"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+## Opening Question
+For the final in DSTA 5301, we are going to look at the Covid data from the Johns Hopkins git repository. I hope to gain some insight into how Indiana fared with  the pandemic compared to the rest of the United States of America. I know what the media was telling me, but what does the data say?
+
+You can get the data for yourself at the following link:
+
+https://github.com/CSSEGISandData/COVID-19/tree/master/csse_covid_19_data/csse_covid_19_time_series
+
+
+## Add Libraries
+To do this analysis, we are going to need some libraries to help out. Here is a listing of the ones that I will be using for this exploration and report.
+
+I am including the install.packages commands in the report in the case that you need to install the packages themselves. These packages are used in the course, so you should have them already. If for some reason you do not, just uncomment the two install.packages() lines and run them.
+
+```{r setup, echo=T, message=F, results='hide'}
+# install.packages("tidyverse")
+# install.packages("lubridate")
+
+library(tidyverse)
+library(lubridate)
+```
+
+### Loading Data
+The first step is to load the data into RStudio. I am only interested in the data for The United States, so I will use the following urls to create my data sets by loading the data from the [Johns Hopkins git repo](https://github.com/CSSEGISandData/COVID-19/tree/master/csse_covid_19_data/csse_covid_19_time_series).
+
+
+```{r load_data, paged.print=TRUE}
+url_base <- 'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_'
+
+file_names <- c(
+                'confirmed_US.csv',
+                'deaths_US.csv'
+                )
+
+urls <- str_c(url_base, file_names)
+
+us_cases <- read.csv(urls[1])
+us_deaths <- read.csv(urls[2])
+```
+
+
+### First Pass Of The Data
+The very first thing that I like to do after I have the data loaded into a dataframe is take a look at the first few rows and the last few rows. I can do this with the head() and tail() functions.
+
+I am including the commands, but not the output in this report as it is quite wide and will result in quite a mess. You can still see the result when you run this Rmd file for yourself.
+
+I like to use the glipse() function as well to see what the different datatypse are, but for this report, there are just to many columns to display.
+
+```{r head and tail data, echo = TRUE, results = "hide", include=TRUE}
+head(us_cases)
+tail(us_cases)
+#glimpse(us_cases)
+```
+
+### Cleaning Up The Data
+Here is a list of the following steps I have learned in this course to clean up the data before I can start to explore what the data is telling me.
+
+- We want to identify the data that is not needed and be sure to get rid of it.
+- Pivot the data into a format that allows us to analyze it.
+- Make sure the dates are in the proper data format.
+- Create factors for columns that can use them.
+
+### Remove Unneeded Columns 
+There are columns of data that I do not need nor want for this analysis. I will remove all of the columns before the Admin2  column, as they do not help with this analysis. I also want to keep all of the columns from Admin2 to the right except for the Lat and Long_ columns. I will select all of those columns and then just remove the Lat and Long_ from the selection. I also need to pivot the data on the date.
+
+As we learned in class, we do this with the following command.
+
+```{r clean_and_cases}
+us_cases_cleaned <- us_cases %>%
+  pivot_longer(cols = -c(UID:Combined_Key),
+                       names_to = "date",
+                       values_to = "cases") %>%
+  select(Admin2:cases) %>% 
+  select(-c(Lat, Long_))
+```
+
+### Fix Dates
+All of the old columns that were used for dates had an X in front of the date. Now that I have them all in a column called date, I need to remove that X.
+
+After that I want to get it into the format yyyy-mm-dd. It is currently in the format of m.dd.yy. This will make the analysis much easier to work with if I want to look at the data over a set period of time.
+
+```{r}
+# remove the x in front of the date
+us_cases_cleaned$date <- substr(us_cases_cleaned$date, 2, nchar(us_cases_cleaned$date))
+
+# put the date in the format yyy-mm-dd
+us_cases_cleaned <- us_cases_cleaned %>% 
+  mutate (date = mdy(date))
+```
+
+### Cleanup US Deaths
+For the us_deaths, we are going to be doing the exact same thing that we did for the use_cases dataset. Note that the us_deaths date has the same X before it. We are going to remove that as well. It should also be noted that we did not have Population in the us_cases dataset. We also do not need the cases, but rather the deaths. We are going to want that to be a column so the pivot command changes slightly.
+
+```{r clean_deaths, echo=T, message=FALSE, results='hide'}
+us_deaths_cleaned <- us_deaths %>%
+  pivot_longer(cols = -c(UID:Population),
+                       names_to = "date",
+                       values_to = "deaths") %>%
+  select(Admin2:deaths) %>% 
+  select(-c(Lat, Long_))
+
+
+# remove the x in front of the date
+us_deaths_cleaned$date <- substr(us_deaths_cleaned$date, 2, nchar(us_deaths_cleaned$date))
+
+
+# put the date in the format yyy-mm-dd
+us_deaths_cleaned <- us_deaths_cleaned %>% 
+  mutate (date = mdy(date))
+```
+
+### Joining Tables
+Next we are going to join the two different tables so that all of the data is combined into one table. We are going to do this with a full_join command.
+
+```{r join_tables, echo=T, message=F, results='hide'}
+us_covid <- us_cases_cleaned %>% 
+  full_join(us_deaths_cleaned)
+```
+
+
+### Create Factors
+The last step that I will do to clean the data up is convert some columns to factors. Those columns will be Admin2, Province_State, Country_Region.
+
+```{r clean_up_us_cases}
+us_done <- us_covid %>% 
+  mutate(Admin2 = factor(Admin2)) %>%
+  mutate(Province_State = factor(Province_State)) %>%
+  mutate(Country_Region = factor(Country_Region))
+```
+
+## Final Cleanup
+When I am at this stage, I will look for missing data, or data that seems to be incorrect. I will start with a summary() command.
+
+Two things that pop up right away is that there are some dates that have a negative case or deaths count. You can not bring someone back from the dead so this has to be looked into. It turns out that there are some dates where cumulative corrections are added to the dataset. So misscounts from previous times are corrected on those days. As such, I will be leaving them in and making a note on that fact.
+
+There are also some rows with a population of 0. It turns out that all of these rows are in the county of Out of AL. There are no cases or deaths for this county, so I am removing all of those rows.
+
+Here is the summary after I have completed all of the above steps.
+
+```{r final_Cleanup}
+us_done <- us_done %>%
+  filter(Population != 0)
+
+summary(us_done)
+```
+
+## EDA
+
+Now that I have the data in a format that I can work with, let’s start off by looking at a few numbers.
+
+First I will take the data and create a new dataset that is broken up by state.
+
+I want to add 2 new columns here. One for the percentage of the population that got covid per state, and one for the percentage of people that died of covid per state. One thing to note here is that someone can get covid more  than once and be counted more than once for the cases, but can only die once from it.
+
+```{r build_tables,  echo=T, message=F, results='hide'}
+state_totals <- us_done %>%
+  group_by(Province_State, Country_Region, date) %>% 
+  summarise(Population = sum(Population), Cases = sum(cases), Deaths = sum(deaths)) %>%
+  mutate(Infected_Percent = sprintf("%.2f", Cases / Population)) %>%
+  mutate(Death_Percent = sprintf("%.5f", Deaths / Population * 100)) %>%
+  select(Province_State, Country_Region,
+         Population, Cases, Deaths, date,
+         Infected_Percent, Death_Percent) %>%
+  ungroup()
+
+# convert columns to doubles
+state_totals$Infected_Percent <- as.numeric(state_totals$Infected_Percent)
+state_totals$Death_Percent <- as.numeric(state_totals$Death_Percent)
+```
+
+### Top Ten States With The Highest Cases
+
+```{r top_cases}
+cases <- state_totals %>%
+  filter(date ==  max(state_totals$date)) %>% 
+    arrange(desc(Cases))
+
+chart <- head(cases, n = 10) %>% 
+  ggplot(aes(x = reorder(Province_State, -Cases) , y = Cases)) +
+  geom_bar(stat = "identity", fill = "orange") +
+  theme_bw() +
+  labs(title = "Top 10 States By Cases", x='State', y = 'Total Cases')
+
+chart + scale_y_continuous(labels = function(x) format(x, big.mark = ",", scientific = FALSE)) +
+ theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+### Top Ten States With The Highest Deaths
+
+```{r top_deaths}
+deaths <- state_totals %>%
+  filter(date ==  max(state_totals$date)) %>% 
+    arrange(desc(Deaths))
+
+chart <- head(deaths, n = 10) %>% 
+  ggplot(aes(x =reorder(Province_State, -Deaths), y = Deaths)) +
+  geom_bar(stat = "identity", fill = "red") +
+  theme_bw() +
+  labs(title = "Top 10 States By Deaths", x='State', y = 'Total Deaths')
+
+chart + scale_y_continuous(labels = function(x) format(x, big.mark = ",", scientific = FALSE)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+### Top Ten States With The Highest Infected Population Percentage
+
+```{r top_case_percentage}
+infected <- state_totals %>%
+  filter(date ==  max(state_totals$date)) %>% 
+    arrange(desc(Infected_Percent))
+
+chart <- head(infected, n = 10) %>% 
+  ggplot(aes(x = reorder(Province_State, -Infected_Percent), y = Infected_Percent)) +
+  geom_bar(stat = "identity", fill = "green") +
+  theme_bw() +
+  labs(title = "Top 10 States By Infected Population Percentage", x='State', y = 'Population Infection Rate')
+
+# convert the y values to a percentage
+chart + scale_y_continuous(labels = function(x) paste0(round(x*100), "%")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+### Top Ten States With The Highest Population Death Percentage.
+
+```{r top_death_percentage}
+death_per <- state_totals %>%
+  filter(date ==  max(state_totals$date)) %>% 
+    arrange(desc(Death_Percent))
+
+chart <- head(death_per, n = 10) %>% 
+  ggplot(aes(x = reorder(Province_State, -Death_Percent), y = Death_Percent)) +
+  geom_bar(stat = "identity", fill = "black") +
+  theme_bw() +
+  labs(title = "Top 10 States By Population Death Percentage", x='State', y = 'Population Death Percentage')
+
+chart + scale_y_continuous(labels = function(x) format(x, big.mark = ",", scientific = FALSE)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+## Indiana
+My current home state is Indiana. Let’s take a look at the covid data over time that we have for it. 
+
+```{r}
+IN <- state_totals %>% 
+  filter(Province_State == 'Indiana')
+
+IN %>% 
+  ggplot() +
+  geom_line(aes(date, Cases, color = 'Cases')) +
+  theme_bw() +
+  labs(x = "Date",
+       y = "Totals",
+       title = "Number of Indiana Covid Cases Over Time") +
+  theme(legend.position = "none")
+
+```
+
+
+```{r}
+IN %>% 
+  ggplot() +
+  geom_line(aes(date, Deaths, color = 'Deaths')) +
+  theme_bw() +
+  labs(x = "Date",
+       y = "Totals",
+       title = "Number of Indiana Covid Deaths Over Time") +
+    theme(legend.position = "none")
+
+```
+
+```{r}
+IN %>% 
+  ggplot() +
+  geom_line(aes(date, Cases, color = 'Cases')) +
+  geom_line(aes(date, Deaths, color = 'Deaths')) +
+  scale_color_manual(values = c("Cases" = "green", "Deaths" = "red"), name = "") +
+  theme_bw() +
+  labs(x = "Date",
+       y = "Totals",
+       title = "Number of Indiana Covid Cases & Deaths Over Time") +
+    theme(
+      legend.position = "bottom",
+      legend.justification='left',
+      legend.direction='horizontal'
+      )
+```
+
+### Arizona Data
+Arizona has the highest death percentage by population. Let’s take a look at how it compares to Indiana. 
+
+When we visualize the data across all of the states, we can see a similar pattern that appears over time. The spikes do not seem to be centralized to any one state, but at the same time across most states.
+
+```{r}
+AZ <- state_totals %>% 
+  filter(Province_State == 'Arizona')
+
+AZ %>% 
+  ggplot() +
+  geom_line(aes(date, Cases, color = 'Cases')) +
+  geom_line(aes(date, Deaths, color = 'Deaths')) +
+  scale_color_manual(values = c("Cases" = "green", "Deaths" = "red"), name = "") +
+  theme_bw() +
+  labs(x = "Date",
+       y = "Totals",
+       title = "Number of Arizona Covid Cases & Deaths Over Time") +
+    theme(
+      legend.position = "bottom",
+      legend.justification='left',
+      legend.direction='horizontal'
+      )
+
+```
+
+### USA Total Stats
+Let’s take a look at the whole USA so we can get a bigger picture of what the combined cases and deaths over time looks like.
+
+```{r}
+usa <- state_totals %>%
+  group_by(date) %>% 
+  summarise(Cases = sum(Cases), Deaths = sum(Deaths))
+  
+usa %>% 
+  ggplot() +
+  geom_line(aes(date, Cases, color = 'Cases')) +
+  geom_line(aes(date, Deaths, color = 'Deaths')) +
+  scale_color_manual(values = c("Cases" = "green", "Deaths" = "red"), name = "") +
+  theme_bw() +
+  labs(x = "Date",
+       y = "Totals",
+       title = "Number of USA Covid Cases & Deaths Over Time") +
+    theme(
+      legend.position = "bottom",
+      legend.justification='left',
+      legend.direction='horizontal'
+      )  
+```
+
+## Bias
+Some of the sources of bias for this report are:
+
+- Someone can get covid more than once and that would be counted as multiple cases for that state.
+- The reporting of cases and deaths were not required at the same time in different states.
+- There was no uniform method of reporting data during some time periods.
+- I wish we had some social-economic data so we could look into other factors besides population, cases and deaths counts.
+
+## Conclusion
+If we look at the average and max values for the percentage of cases and deaths per population of all of the United States, and compare it to the values from Indiana, we can see that the infection rate is very close to the same, but the death per population is about 8% higher for Indiana.
+
+With only having access to the population, cases, and deaths, we can not really get a crystal clear picture of how Indiana held up to covid vs the rest of the United States. I would like to get some information on age groups, how hospitals are set up for outbreaks, and other social-economic data to really see the division from state to state.
+
+```{r}
+avg_us_infected <- mean(infected$Infected_Percent) * 100
+avg_us_death <- mean(infected$Death_Percent) * 100
+
+max_us_infected <- max(infected$Infected_Percent) * 100
+max_us_death <- max(infected$Death_Percent) * 100
+
+indiana_infected <- infected %>%
+  filter(Province_State == 'Indiana') %>% 
+  select(Infected_Percent)
+  
+
+indiana_death_rate <- infected %>%
+  filter(Province_State == 'Indiana') %>% 
+  select(Death_Percent)
+
+indiana <- as.numeric(c(indiana_infected * 100, indiana_death_rate * 100))
+usa_avg <- c(avg_us_infected, avg_us_death)
+usa_max <- c(max_us_infected, max_us_death)
+
+comp <- data.frame(c('Infection Percentage', 'Death Percentage'),indiana, usa_avg, usa_max)
+colnames(comp) <- c('', 'Indiana', 'USA Avg', 'USA Max')
+comp
+```
+
+
+## Session Information
+In order to reproduced this report, I have included the session information. This will list all of the modules and version that are used to generate this report along with the OS.
+
+```{r session_information, echo=FALSE}
+sessionInfo()
+```
