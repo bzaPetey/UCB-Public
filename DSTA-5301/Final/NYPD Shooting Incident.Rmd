@@ -1,0 +1,192 @@
+---
+title: "NYPD Shooting Incident Data (Historic)"
+author: "Peter Laliberte"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    df_print: paged
+---
+
+# Question of Interest
+
+How has the NYPD Shooting Incident changed over time between the different boroughs in New York? Due to the limited time for this project, that will be the only focus of this report.
+
+# Setting Up
+
+The first thing I like to do when setting up a new R Markdown document (after you know what questions you want to answer) is to setup the libraries that you want to use and then make sure you have access to the data that you are going to be using.
+
+- I will be using the libraries that are included in tidyverse.
+- The data will be the ***[NYPD Shooting Incident Data (Historic)](https://data.gov/)*** data set from data.gov. This data is provided by each precinct and will list the reported incidents where there was a police shooting from Jan 1, 2006 - Dec 31, 2021.
+
+```{r setup, echo=T, results='hide', message=F, warning=F}
+library(tidyverse)
+
+url <- "https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+nypd1 <- read.csv(url)
+```
+
+
+# Tidy & Transform Data
+
+Once I have the data loaded, I like to do some basic examinations of it.
+
+- First I will take a look at the data with the view() function. This will open a new tab with the data displayed in a tabular format. Other ways to do this is the head() and tail functions to get the first few rows, or last rows.
+- Then I like to use the glimpse() function. This function will give me the number of rows and columns in the data set. The column names are also listed with this function along with the type of data each column holds. Lastly this will show you some of the data in the columns..
+- Next I will use the summary() function so I can get some information on each feature of the data set.
+
+```{r examine, echo=T, message=F, warning=F}
+view(nypd1)
+glimpse(nypd1)
+summary(nypd1)
+```
+
+
+The summary() function has revealed that we have 2 NA values in the *JURISDICTION_CODE* column. Let's take a look at the rows with any **NA** with the following command.
+
+```{r, show_NA}
+nypd1[rowSums(is.na(nypd1)) > 0, ]
+```
+
+I am not planning on using that column in my analysis, and will be removing it along with some other columns that I do not need. In a coming step.
+
+### Change Date Format
+
+I am going to change the date from the format mm/dd/yyyy to yyyy/mm/dd so that I can sort by date later if needed. For that I am going to use a function from the library lubridate. This should have been included in the tidyverse install. I am going to add the library here as this is a step by step report, but generally I like to have all of the libraries at the top of the document.
+After I change the date format, I am going to use the view() function to make sure the date is the way I want it.
+
+```{r format_date, echo=T, message=F, warning=F}
+library(lubridate)
+nypd1$OCCUR_DATE <- mdy(nypd1$OCCUR_DATE)
+
+```
+
+### Remove Unwated Columns
+
+Next I want to look for the data that I do not need for my analysis. Those columns will get dropped from the table.
+
+```{r drop_tables}
+nypd2 <- nypd1 %>% select(-c(OCCUR_TIME,
+                             PRECINCT,
+                             JURISDICTION_CODE,
+                             LOCATION_DESC,
+                             Latitude,
+                             Longitude,
+                             X_COORD_CD,
+                             Y_COORD_CD, Lon_Lat))
+```
+
+### Fix Incorrect Data
+
+The *PERP_AGE_GROUP* column has blanks and UNKNOWN values. There are also values that do not make sense like **1020, 224, 940** as these are not valid ages. I can see these by using the unique() function on the column. I am going to change all of the blank, or incorrect ages to ***UNKNOWN***.
+
+I am also going to take the blank fields for *PERP_SEX* and change them to *U*.
+I will take the blank values for *PERP_RACE* and change them to *UNKNOWN*.
+
+```{r fix_bad_data}
+nypd2['PERP_AGE_GROUP'][nypd2['PERP_AGE_GROUP'] == 224] <- "UNKNOWN"
+nypd2['PERP_AGE_GROUP'][nypd2['PERP_AGE_GROUP'] == 1020] <- "UNKNOWN"
+nypd2['PERP_AGE_GROUP'][nypd2['PERP_AGE_GROUP'] == 940] <- "UNKNOWN"
+nypd2['PERP_AGE_GROUP'][nypd2['PERP_AGE_GROUP'] == ""] <- "UNKNOWN"
+nypd2['PERP_SEX'][nypd2['PERP_SEX'] == ""] <- "U"
+nypd2['PERP_RACE'][nypd2['PERP_RACE'] == ""] <- "UNKNOWN"
+```
+
+### Create Factors
+
+Now I want to look at the column and decide what ones I want to convert to factors or change the datatypes of.
+
+```{r make_factors}
+#change to a factor
+nypd2$BORO <- as.factor(nypd2$BORO)
+nypd2$STATISTICAL_MURDER_FLAG <- as.factor(nypd2$STATISTICAL_MURDER_FLAG)
+nypd2$PERP_AGE_GROUP <- as.factor(nypd2$PERP_AGE_GROUP)
+nypd2$PERP_SEX <- as.factor(nypd2$PERP_SEX)
+nypd2$PERP_RACE <- as.factor(nypd2$PERP_RACE)
+nypd2$VIC_AGE_GROUP <- as.factor(nypd2$VIC_AGE_GROUP)
+nypd2$VIC_SEX <- as.factor(nypd2$VIC_SEX)
+nypd2$VIC_RACE <- as.factor(nypd2$VIC_RACE)
+```
+
+### Examine New Data Summary
+
+After I have all of the datatypes sorted, I will take a look at the summary() again to make sure I got everything.
+
+```{r new_summary}
+summary(nypd2)
+```
+
+# Add Visualizations and Analysis
+
+Let’s start off by taking a look at what Borough has the most incidents.
+
+```{r other,  warning=F}
+nypd2 %>%
+  ggplot(aes(BORO)) +
+  geom_bar(fill = "#ccaaaa") +
+  theme_bw() +
+  labs(x = "Boroughs",
+       y = "Incidents",
+       title = "Number of Shooting Incidents By Borough (1/1/2006 - 12/31/2021)")
+```
+
+
+
+Now lets take a look at each Borough over time.
+
+```{r yearly_by_Borough, error=TRUE, message=F, warning=F}
+options(dplyr.summarise.inform = FALSE)
+
+yearly <- nypd2 %>%
+  mutate(year= year(OCCUR_DATE)) %>%
+  group_by(BORO, year) %>%
+  summarise(total=n())
+
+yearly %>% 
+  ggplot(aes(year, total, colour = BORO )) +
+  geom_point(size = 3, alpha = .25) +
+  geom_line(linewidth = 1) +
+  theme_bw() +
+  labs(x = "Date",
+       y = "Incidents",
+       title = "Number of Shooting Incidents By Borough Over Time")
+```
+
+Lets take a look at how it breaks down for perp age group with the *UNKNOWN* filtered out.
+
+```{r yearly_by_PERP_AGE_GROUP,  warning=F}
+nypd2 %>%
+  filter(PERP_AGE_GROUP != "UNKNOWN") %>% 
+  ggplot(aes(PERP_AGE_GROUP)) +
+  geom_bar(fill = "#aaaacc") +
+  theme_bw() +
+  labs(x = "PERP AGE GROUP",
+       y = "Incidents",
+       title = "Number of Shooting Incidents By Known Perp Age Group")
+```
+
+# Analysis
+
+Looking at the graphs, we can see that Brooklyn has historically, given the time period we are analyzing here, had the highest shooting incidents. We can see that in 2020 the shooting incident rate goes up quite a bit. The numbers are near all time highs for the time period studied. This is the same time the pandemic hit. It would be great to get some data to correlate with to see what else was going on in 2020. A heatmap would really bring this data out.
+
+Having population numbers for each borough over this time period would be great so we can see how the population changed with this data.
+
+I did shy away from doing analysis by race or sex as that can be a sensitive topic that I would to get more training on before I try and approach it in a public manner.
+
+# Conclusion
+
+After looking at the data presented, we can conclude that shooting incidents had been dropping year after year until 2020. Something happened around that time that led to an increase in shootings throughout all of the boroughs of New York.
+
+All of the data is reported by the precinct. Since I have no control over how that data is reported, I am at the mercy of each person that files a report that they do so ***without any personal bias***. There is a lot of missing data and this can lead to misrepresentation of the data causing a bias in the result.
+
+I have an unfamiliarity with the different boroughs in New York. All I really know about the population and culture of each borough is what I have seen in the news or in a movie. This is a ***major personal bias*** that I  will have to overcome.
+
+If I had more time, I would love to take a look and see how each precinct compares to each other. Do some precincts report more accurate information than others? How does the data break down when compared over the different age groups present in the data? How does race look when analyzed?
+
+Overall I really enjoyed this assignment. It allowed me to explore a lot of different things that someone in the Data Science field will do in the day to day routine. I am looking forward to seeing where this leads as more concepts and knowledge are added to the pool.
+
+## Session Information
+
+```{r}
+sessionInfo()
+```
+
